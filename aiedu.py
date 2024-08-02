@@ -3,8 +3,8 @@ import openai
 import time
 
 # Streamlit 앱 설정
-st.set_page_config(page_title="MetaGIS AI Edu Assistant 챗봇", page_icon="🤖")
-st.title("MetaGIS AI Edu Assistant 챗봇")
+st.set_page_config(page_title="OpenAI Assistant 챗봇", page_icon="🤖")
+st.title("OpenAI Assistant 챗봇")
 
 # 사이드바에 API 키 입력 필드 추가
 api_key = st.sidebar.text_input("OpenAI API 키를 입력하세요", type="password")
@@ -22,8 +22,14 @@ if "thread_id" not in st.session_state:
 # OpenAI 클라이언트 초기화 함수
 def init_openai_client():
     if api_key:
-        openai.api_key = api_key
-        return openai.Client()
+        try:
+            client = openai.Client(api_key=api_key)
+            # API 키 유효성 검사를 위한 간단한 요청
+            client.models.list()
+            return client
+        except openai.OpenAIError as e:
+            st.sidebar.error(f"API 키가 유효하지 않습니다: {str(e)}")
+            return None
     else:
         st.sidebar.error("API 키를 입력해주세요.")
         return None
@@ -49,25 +55,26 @@ def send_message(client, thread_id, content):
     return messages.data[0].content[0].text.value
 
 # 메인 앱 로직
-client = init_openai_client()
+if api_key:
+    client = init_openai_client()
+    if client:
+        # 스레드 생성 또는 검색
+        if st.session_state.thread_id is None:
+            thread = client.beta.threads.create()
+            st.session_state.thread_id = thread.id
 
-if client:
-    # 스레드 생성 또는 검색
-    if st.session_state.thread_id is None:
-        thread = client.beta.threads.create()
-        st.session_state.thread_id = thread.id
+        # 사용자 입력
+        user_input = st.chat_input("메시지를 입력하세요.")
 
-    # 사용자 입력
-    user_input = st.chat_input("메시지를 입력하세요.")
+        if user_input:
+            st.session_state.messages.append({"role": "user", "content": user_input})
+            with st.spinner('응답을 생성 중입니다...'):
+                response = send_message(client, st.session_state.thread_id, user_input)
+            st.session_state.messages.append({"role": "assistant", "content": response})
 
-    if user_input:
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        response = send_message(client, st.session_state.thread_id, user_input)
-        st.session_state.messages.append({"role": "assistant", "content": response})
-
-    # 대화 기록 표시
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
+        # 대화 기록 표시
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
 else:
     st.info("API 키를 입력하면 챗봇을 사용할 수 있습니다.")
